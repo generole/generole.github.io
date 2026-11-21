@@ -215,6 +215,7 @@
       .share-btn.x { background: #111; } .share-btn.x:hover { background: #333; }
       .share-btn.fb { background: #1877f2; } .share-btn.fb:hover { background: #0f66d6; }
       .share-btn.li { background: #0a66c2; } .share-btn.li:hover { background: #084e96; }
+      .share-btn.copy { background: var(--green); } .share-btn.copy:hover { background: var(--green-2); }
       .post-article .body-text p { margin: 0 0 14px; font-size: 1.04rem; }
       .post-article h2.post-h2 { font-size: clamp(1.6rem, 3.4vw, 2.15rem); margin: 30px 0 14px; }
       .recipe-box { border: 1.5px solid var(--line); border-radius: var(--radius); overflow: hidden; margin-top: 28px; }
@@ -2185,9 +2186,51 @@
       var filter = { type: "all", value: "" };
       var toastTimer = null;
 
+      var SITE_URL = "https://generole.github.io";
+      var HOME_TITLE = document.title;
+      var currentRecipeId = null;
       function byId(id) {
         for (var i = 0; i < RECIPES.length; i++) if (RECIPES[i].id === id) return RECIPES[i];
         return null;
+      }
+      function bySlug(slug) {
+        if (!slug) return null;
+        var s = String(slug).replace(/^\/+|\/+$/g, "").toLowerCase();
+        for (var i = 0; i < RECIPES.length; i++) if (RECIPES[i].slug.toLowerCase() === s) return RECIPES[i];
+        return null;
+      }
+      function recipeUrl(r) { return SITE_URL + "/#/" + r.slug; }
+      function recipeHash(r) { return "#/" + r.slug; }
+      function slugFromLocation() {
+        var h = window.location.hash || "";
+        if (h.indexOf("#/") === 0) {
+          var fromHash = h.slice(2).split(/[?#]/)[0].replace(/\/+$/g, "");
+          if (bySlug(fromHash)) return fromHash;
+        }
+        var parts = (window.location.pathname || "").split("/");
+        for (var i = parts.length - 1; i >= 0; i--) {
+          var seg = "";
+          try { seg = decodeURIComponent(parts[i] || ""); } catch (e) { seg = parts[i] || ""; }
+          seg = seg.replace(/\.html$/i, "");
+          if (seg && bySlug(seg)) return seg;
+        }
+        return null;
+      }
+      function homeUrl() {
+        var path = window.location.pathname || "/";
+        var hash = window.location.hash || "";
+        var hashHasSlug = hash.indexOf("#/") === 0 && !!bySlug(hash.slice(2).split(/[?#]/)[0].replace(/\/+$/g, ""));
+        if (!hashHasSlug) {
+          /* Reached via a /<slug>/ path: strip the slug segment to get home. */
+          var parts = path.split("/"), cleaned = [], removed = false;
+          for (var i = 0; i < parts.length; i++) {
+            var seg = parts[i] || "";
+            if (seg && bySlug(seg.replace(/\.html$/i, ""))) { removed = true; continue; }
+            if (seg) cleaned.push(seg);
+          }
+          if (removed) { path = "/" + cleaned.join("/"); if (path !== "/") path += "/"; }
+        }
+        return path + (window.location.search || "");
       }
       function countInCat(catId) {
         var n = 0;
@@ -2226,9 +2269,17 @@
         var r = byId(id);
         if (!r) return;
         if (network === "pinterest") { pinRecipe(id); return; }
-        var text = r.title + " — /" + r.slug + "/\n" + r.blurb;
+        var text = r.title + " — " + recipeUrl(r) + "\n" + r.blurb;
         copyText(text, function () {
           showToast("Share text copied for " + network + " — paste it into your post.");
+        });
+      }
+      function copyRecipeLink(id) {
+        var r = byId(id);
+        if (!r) return;
+        var url = recipeUrl(r);
+        copyText(url, function () {
+          showToast("Link copied: " + url);
         });
       }
 
@@ -2241,7 +2292,7 @@
           '<div class="card-body">' +
             '<h3 data-open="' + r.id + '">' + r.title + '</h3>' +
             '<p>' + r.blurb + '</p>' +
-            '<span class="card-slug">/' + r.slug + '/</span>' +
+            '<span class="card-slug">' + recipeUrl(r) + '</span>' +
             '<div class="card-meta"><span>' + CLOCK_SVG + r.timeLabel + '</span><span>' + SERVE_SVG + 'Serves ' + r.servings + '</span></div>' +
             '<div class="card-actions">' +
               '<button class="btn btn-green" data-open="' + r.id + '">View recipe</button>' +
@@ -2351,9 +2402,10 @@
         }).join("");
       }
 
-      function openRecipe(id) {
+      function openRecipe(id, opts) {
         var r = byId(id);
         if (!r) return;
+        opts = opts || {};
         var intro = r.introParas.map(function (p) { return "<p>" + p + "</p>"; }).join("");
         var overview = r.overviewParas.map(function (p) { return "<p>" + p + "</p>"; }).join("");
         var ings = r.ingredients.map(function (i) { return "<li>" + i + "</li>"; }).join("");
@@ -2364,7 +2416,7 @@
             '<span><span class="qp-cat">' + catLabel(o.catId) + '</span>' +
             '<span class="qp-title">' + o.title + '</span></span></button>';
         }).join("");
-        document.getElementById("postSlug").textContent = "/" + r.slug + "/";
+        document.getElementById("postSlug").textContent = recipeUrl(r);
         document.getElementById("detailContent").innerHTML =
           '<div class="post-layout">' +
             '<article class="post-article">' +
@@ -2375,6 +2427,7 @@
               '<div class="share-row">' +
                 '<span class="share-count">' + r.shares + '<small>Shares</small></span>' +
                 '<button class="share-btn pin" data-share="pinterest" data-id="' + r.id + '">' + PIN_SVG + 'Save to Pinterest</button>' +
+                '<button class="share-btn copy" data-copy-link="' + r.id + '">Copy link</button>' +
                 '<button class="share-btn x" data-share="X" data-id="' + r.id + '">Share on X</button>' +
                 '<button class="share-btn fb" data-share="Facebook" data-id="' + r.id + '">Facebook</button>' +
                 '<button class="share-btn li" data-share="LinkedIn" data-id="' + r.id + '">LinkedIn</button>' +
@@ -2400,6 +2453,7 @@
               '</div>' +
               '<div class="detail-actions" style="display:flex;flex-wrap:wrap;gap:12px;margin-top:22px;">' +
                 '<button class="btn btn-pin" data-pin="' + r.id + '">' + PIN_SVG + 'Save to Pinterest</button>' +
+                '<button class="btn btn-ghost" data-copy-link="' + r.id + '">Copy link</button>' +
                 '<button class="btn btn-green" data-jump="recipeCard">Jump to recipe card</button>' +
               '</div>' +
               '<p class="post-meta">Filed under: <button data-cat="' + r.catId + '">' + catLabel(r.catId) + '</button></p>' +
@@ -2433,11 +2487,40 @@
         overlay.scrollTop = 0;
         document.body.style.overflow = "hidden";
         window.scrollTo(0, 0);
+        currentRecipeId = r.id;
+        document.title = r.title + " — Generole";
+        if (opts.push !== false) {
+          var targetHash = recipeHash(r);
+          if (window.location.hash !== targetHash) {
+            try { window.history.pushState({ recipe: r.id }, "", targetHash); } catch (e) { window.location.hash = targetHash; }
+          }
+        }
       }
 
-      function closeRecipe() {
+      function closeRecipe(opts) {
+        opts = opts || {};
+        var wasOpen = currentRecipeId !== null || document.getElementById("detailOverlay").classList.contains("open");
         document.getElementById("detailOverlay").classList.remove("open");
         document.body.style.overflow = "";
+        currentRecipeId = null;
+        document.title = HOME_TITLE;
+        if (wasOpen && opts.push !== false) {
+          var slug = slugFromLocation();
+          if (slug) {
+            try { window.history.pushState(null, "", homeUrl()); } catch (e) {}
+          }
+        }
+      }
+      function syncFromLocation() {
+        var slug = slugFromLocation();
+        if (slug) {
+          var r = bySlug(slug);
+          if (r) {
+            if (currentRecipeId !== r.id) openRecipe(r.id, { push: false });
+            return;
+          }
+        }
+        if (currentRecipeId !== null) closeRecipe({ push: false });
       }
       function goHome() {
         closeRecipe();
@@ -2446,6 +2529,7 @@
 
       document.addEventListener("click", function (e) {
         var t;
+        if ((t = e.target.closest("[data-copy-link]"))) { copyRecipeLink(t.getAttribute("data-copy-link")); return; }
         if ((t = e.target.closest("[data-open]"))) { openRecipe(t.getAttribute("data-open")); return; }
         if ((t = e.target.closest("[data-share]"))) { shareRecipe(t.getAttribute("data-id"), t.getAttribute("data-share")); return; }
         if ((t = e.target.closest("[data-pin]"))) { pinRecipe(t.getAttribute("data-pin")); return; }
@@ -2501,8 +2585,12 @@
       document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeRecipe(); });
       searchInput.addEventListener("input", render);
 
+      window.addEventListener("popstate", syncFromLocation);
+      window.addEventListener("hashchange", syncFromLocation);
+
       renderMealRows();
       render();
+      syncFromLocation();
     </script>
   </body>
 </html>
